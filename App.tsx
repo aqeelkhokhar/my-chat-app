@@ -7,7 +7,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 import {
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -55,6 +57,8 @@ function AppContent() {
   const [connected, setConnected] = useState(socket.connected);
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const channelIdRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   const headerText = useMemo(() => {
     if (!connected) {
@@ -63,6 +67,73 @@ function AppContent() {
 
     return socket.id ? `Connected: ${socket.id}` : 'Connected';
   }, [connected]);
+
+  useEffect(() => {
+    const setupNotifications = async () => {
+      const settings = await notifee.requestPermission();
+      console.log('Notification permission:', settings);
+
+      const channelId = await notifee.createChannel({
+        id: 'chat-messages',
+        name: 'Chat Messages',
+        importance: AndroidImportance.HIGH,
+      });
+
+      channelIdRef.current = channelId;
+      console.log('Notification channel created:', channelId);
+    };
+
+    setupNotifications();
+
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      appStateRef.current = nextAppState;
+      console.log('App state changed to:', nextAppState);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const showNotification = async (title: string, body: string) => {
+    try {
+      console.log('Attempting to show notification:', {
+        title,
+        body,
+        appState: appStateRef.current,
+      });
+
+      if (!channelIdRef.current) {
+        console.log('No channel ID available');
+        return;
+      }
+
+      const notificationId = await notifee.displayNotification({
+        title,
+        body,
+        android: {
+          channelId: channelIdRef.current,
+          importance: AndroidImportance.HIGH,
+          smallIcon: 'ic_launcher',
+          pressAction: {
+            id: 'default',
+          },
+        },
+        ios: {
+          sound: 'default',
+          foregroundPresentationOptions: {
+            alert: true,
+            badge: true,
+            sound: true,
+          },
+        },
+      });
+
+      console.log('Notification displayed with ID:', notificationId);
+    } catch (error) {
+      console.error('Error showing notification:', error);
+    }
+  };
 
   useEffect(() => {
     const onConnect = () => {
@@ -105,18 +176,28 @@ function AppContent() {
       }
 
       if (!text.trim()) {
+        console.log('Ignoring empty message');
         return;
       }
 
-      const isFromMe = !!senderId && senderId === socket.id;
+      if (clientMessageId && seenMessageIdsRef.current.has(clientMessageId)) {
+        console.log(
+          'Ignoring duplicate message (already seen):',
+          clientMessageId,
+        );
+        return;
+      }
+
+      const isFromMe = senderId === socket.id;
       if (isFromMe) {
+        console.log('Ignoring message from self:', {
+          senderId,
+          myId: socket.id,
+        });
         return;
       }
 
       if (clientMessageId) {
-        if (seenMessageIdsRef.current.has(clientMessageId)) {
-          return;
-        }
         seenMessageIdsRef.current.add(clientMessageId);
       }
 
@@ -131,7 +212,13 @@ function AppContent() {
           createdAt: Date.now(),
         },
       ]);
-      console.log('New message:', data);
+      console.log('New message received from other user:', {
+        text,
+        senderId,
+        myId: socket.id,
+      });
+
+      showNotification('New Message', text);
     };
 
     socket.on('connect', onConnect);
@@ -164,13 +251,16 @@ function AppContent() {
     const clientMessageId = `${Date.now()}-${Math.random()
       .toString(16)
       .slice(2)}`;
+
+    seenMessageIdsRef.current.add(clientMessageId);
+
     socket.emit('send_message', {
       text,
       senderId: socket.id,
       clientMessageId,
       createdAt: Date.now(),
     });
-    seenMessageIdsRef.current.add(clientMessageId);
+
     setMessages(prev => [
       ...prev,
       {
@@ -183,6 +273,12 @@ function AppContent() {
       },
     ]);
     setInput('');
+
+    console.log('Message sent:', {
+      text,
+      clientMessageId,
+      senderId: socket.id,
+    });
   };
 
   return (
@@ -196,7 +292,7 @@ function AppContent() {
         ]}
       >
         <Text style={styles.headerTitle}>Chat</Text>
-        {/* <Text style={styles.headerSubtitle}>{headerText}</Text> */}
+        <Text style={styles.headerSubtitle}>{headerText}</Text>
       </View>
 
       <KeyboardAvoidingView
