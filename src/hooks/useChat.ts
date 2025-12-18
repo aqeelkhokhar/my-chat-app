@@ -4,11 +4,28 @@ import type { ChatMessage } from '../types/chat';
 
 type ShowNotification = (title: string, body: string) => Promise<void>;
 
-export function useChat(showNotification: ShowNotification) {
+type ConversationMeta = {
+  lastText: string;
+  lastAt: number;
+};
+
+export function useChat(
+  showNotification: ShowNotification,
+  userId: string | null,
+  toUserId: string,
+) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connected, setConnected] = useState(socket.connected);
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [unreadByUserId, setUnreadByUserId] = useState<Record<string, number>>(
+    {},
+  );
+  const [metaByUserId, setMetaByUserId] = useState<
+    Record<string, ConversationMeta>
+  >({});
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
+  const activeChatRef = useRef('');
 
   const headerText = useMemo(() => {
     if (!connected) {
@@ -19,19 +36,38 @@ export function useChat(showNotification: ShowNotification) {
   }, [connected]);
 
   useEffect(() => {
+    activeChatRef.current = toUserId.trim();
+  }, [toUserId]);
+
+  useEffect(() => {
     const onConnect = () => {
       setConnected(true);
       console.log('Connected:', socket.id);
+
+      if (userId) {
+        socket.emit('register', { userId });
+        socket.emit('get_online_users');
+      }
     };
 
     const onDisconnect = () => {
       setConnected(false);
     };
 
+    const onOnlineUsers = (userIds: unknown) => {
+      if (!Array.isArray(userIds)) {
+        return;
+      }
+      const normalized = userIds.filter(u => typeof u === 'string') as string[];
+      setOnlineUsers(normalized);
+    };
+
     const onReceiveMessage = (data: unknown) => {
       let text = '';
-      let senderId: string | undefined;
+      let fromUserId: string | undefined;
+      let receivedToUserId: string | undefined;
       let clientMessageId: string | undefined;
+      let createdAt: number | undefined;
 
       if (typeof data === 'string') {
         text = data;
@@ -45,8 +81,18 @@ export function useChat(showNotification: ShowNotification) {
           text = JSON.stringify(data);
         }
 
-        if (typeof d.senderId === 'string') {
-          senderId = d.senderId;
+        if (typeof d.fromUserId === 'string') {
+          fromUserId = d.fromUserId;
+        } else if (typeof d.senderId === 'string') {
+          fromUserId = d.senderId;
+        }
+
+        if (typeof d.toUserId === 'string') {
+          receivedToUserId = d.toUserId;
+        }
+
+        if (typeof d.createdAt === 'number') {
+          createdAt = d.createdAt;
         }
 
         if (typeof d.clientMessageId === 'string') {
@@ -71,17 +117,36 @@ export function useChat(showNotification: ShowNotification) {
         return;
       }
 
-      const isFromMe = senderId === socket.id;
-      if (isFromMe) {
-        console.log('Ignoring message from self:', {
-          senderId,
-          myId: socket.id,
-        });
+      if (userId && fromUserId === userId) {
         return;
       }
 
       if (clientMessageId) {
         seenMessageIdsRef.current.add(clientMessageId);
+      }
+
+      const normalizedFrom = typeof fromUserId === 'string' ? fromUserId : '';
+      const normalizedTo =
+        typeof receivedToUserId === 'string' ? receivedToUserId : '';
+      const messageCreatedAt =
+        typeof createdAt === 'number' ? createdAt : Date.now();
+
+      if (normalizedFrom) {
+        setMetaByUserId(prev => ({
+          ...prev,
+          [normalizedFrom]: {
+            lastText: text,
+            lastAt: messageCreatedAt,
+          },
+        }));
+
+        const activeChat = activeChatRef.current;
+        if (activeChat !== normalizedFrom) {
+          setUnreadByUserId(prev => ({
+            ...prev,
+            [normalizedFrom]: (prev[normalizedFrom] ?? 0) + 1,
+          }));
+        }
       }
 
       setMessages(prev => [
@@ -90,16 +155,18 @@ export function useChat(showNotification: ShowNotification) {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           text,
           from: 'other',
-          senderId,
+          fromUserId: normalizedFrom || fromUserId,
+          toUserId: normalizedTo || receivedToUserId,
           clientMessageId,
-          createdAt: Date.now(),
+          createdAt: messageCreatedAt,
         },
       ]);
 
       console.log('New message received from other user:', {
         text,
-        senderId,
-        myId: socket.id,
+        fromUserId,
+        toUserId: receivedToUserId,
+        myUserId: userId,
       });
 
       showNotification('New Message', text);
@@ -107,18 +174,58 @@ export function useChat(showNotification: ShowNotification) {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('online_users', onOnlineUsers);
     socket.on('receive_message', onReceiveMessage);
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('online_users', onOnlineUsers);
       socket.off('receive_message', onReceiveMessage);
     };
-  }, [showNotification]);
+  }, [showNotification, userId]);
+
+  useEffect(() => {
+    const activeChat = toUserId.trim();
+    if (!activeChat) {
+      return;
+    }
+
+    setUnreadByUserId(prev => {
+      if (!prev[activeChat]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[activeChat];
+      return next;
+    });
+  }, [toUserId]);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    if (!socket.connected) {
+      return;
+    }
+
+    socket.emit('register', { userId });
+    socket.emit('get_online_users');
+  }, [userId]);
 
   const sendMessage = () => {
     const text = input.trim();
     if (!text) {
+      return;
+    }
+
+    const trimmedToUserId = toUserId.trim();
+    if (!trimmedToUserId) {
+      return;
+    }
+
+    if (!userId) {
       return;
     }
 
@@ -130,10 +237,19 @@ export function useChat(showNotification: ShowNotification) {
 
     socket.emit('send_message', {
       text,
-      senderId: socket.id,
+      fromUserId: userId,
+      toUserId: trimmedToUserId,
       clientMessageId,
       createdAt: Date.now(),
     });
+
+    setMetaByUserId(prev => ({
+      ...prev,
+      [trimmedToUserId]: {
+        lastText: text,
+        lastAt: Date.now(),
+      },
+    }));
 
     setMessages(prev => [
       ...prev,
@@ -141,7 +257,8 @@ export function useChat(showNotification: ShowNotification) {
         id: clientMessageId,
         text,
         from: 'me',
-        senderId: socket.id,
+        fromUserId: userId,
+        toUserId: trimmedToUserId,
         clientMessageId,
         createdAt: Date.now(),
       },
@@ -152,7 +269,8 @@ export function useChat(showNotification: ShowNotification) {
     console.log('Message sent:', {
       text,
       clientMessageId,
-      senderId: socket.id,
+      fromUserId: userId,
+      toUserId: trimmedToUserId,
     });
   };
 
@@ -163,5 +281,8 @@ export function useChat(showNotification: ShowNotification) {
     sendMessage,
     connected,
     headerText,
+    onlineUsers,
+    unreadByUserId,
+    metaByUserId,
   };
 }
