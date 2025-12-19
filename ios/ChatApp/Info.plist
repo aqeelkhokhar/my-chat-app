@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access for video calls</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access for voice/video calls</string>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>This app needs notification permission to alert you about new messages</string>
 	<key>RCTNewArchEnabled</key>

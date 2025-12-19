@@ -11,9 +11,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CallOverlay } from '../components/CallOverlay';
 import { useChat } from '../hooks/useChat';
 import { useNotifications } from '../hooks/useNotifications';
 import { useUserId } from '../hooks/useUserId';
+import { useWebRTCCall } from '../hooks/useWebRTCCall';
 import { styles } from '../styles/chatStyles';
 import type { ChatMessage } from '../types/chat';
 
@@ -41,6 +43,18 @@ export function ChatScreen() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const { userId } = useUserId();
+
+  const {
+    mode: callMode,
+    peerUserId,
+    incomingCall,
+    localStream,
+    remoteStream,
+    startCall,
+    acceptIncoming,
+    rejectIncoming,
+    endCall,
+  } = useWebRTCCall(userId);
 
   const { showNotification } = useNotifications();
   const {
@@ -80,6 +94,13 @@ export function ChatScreen() {
     });
   }, [conversationMessages.length]);
 
+  const canCall = !!userId && !!selectedUserId;
+  const callPeerLabel = peerUserId
+    ? userLabel(peerUserId)
+    : selectedUserId
+    ? userLabel(selectedUserId)
+    : 'User';
+
   return (
     <View style={styles.container}>
       <View
@@ -97,15 +118,33 @@ export function ChatScreen() {
             </Text>
             <Text style={styles.headerSubtitle}>{headerText}</Text>
           </View>
-          <View
-            style={[
-              styles.meAvatar,
-              {
-                backgroundColor: hashToColor(userId ?? 'ME'),
-              },
-            ]}
-          >
-            <Text style={styles.meAvatarText}>Me</Text>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.headerCallButton,
+                !canCall ? styles.headerCallButtonDisabled : null,
+                pressed ? styles.headerCallButtonPressed : null,
+              ]}
+              onPress={
+                canCall
+                  ? () =>
+                      startCall({ toUserId: selectedUserId!, isVideo: true })
+                  : undefined
+              }
+            >
+              <Text style={styles.headerCallButtonText}>Call</Text>
+            </Pressable>
+
+            <View
+              style={[
+                styles.meAvatar,
+                {
+                  backgroundColor: hashToColor(userId ?? 'ME'),
+                },
+              ]}
+            >
+              <Text style={styles.meAvatarText}>Me</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -160,10 +199,7 @@ export function ChatScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <Text
-                      numberOfLines={1}
-                      style={styles.userName}
-                    >
+                    <Text numberOfLines={1} style={styles.userName}>
                       {userLabel(u)}
                     </Text>
                     <Text numberOfLines={1} style={styles.userPreview}>
@@ -240,6 +276,18 @@ export function ChatScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <CallOverlay
+        visible={callMode !== 'idle'}
+        mode={callMode}
+        peerLabel={callPeerLabel}
+        incomingCall={incomingCall}
+        localStream={localStream}
+        remoteStream={remoteStream}
+        onAccept={acceptIncoming}
+        onReject={rejectIncoming}
+        onEnd={() => endCall('user_hangup')}
+      />
     </View>
   );
 }

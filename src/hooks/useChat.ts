@@ -177,6 +177,11 @@ export function useChat(
     socket.on('online_users', onOnlineUsers);
     socket.on('receive_message', onReceiveMessage);
 
+    if (socket.connected && userId) {
+      socket.emit('register', { userId });
+      socket.emit('get_online_users');
+    }
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
