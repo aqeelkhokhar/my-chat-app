@@ -30,14 +30,6 @@ type SignalingInvite = {
   isVideo: boolean;
 };
 
-type SignalingOffer = {
-  callId: string;
-  fromUserId: string;
-  toUserId: string;
-  sdp: RTCSessionDescriptionInit;
-  isVideo: boolean;
-};
-
 type SignalingAnswer = {
   callId: string;
   fromUserId: string;
@@ -57,26 +49,6 @@ type SignalingEnd = {
   fromUserId: string;
   toUserId: string;
   reason?: string;
-};
-
-type CallAccepted = {
-  callId: string;
-  fromUserId: string;
-  toUserId: string;
-};
-
-type CallRejected = {
-  callId: string;
-  fromUserId: string;
-  toUserId: string;
-  reason?: string | null;
-};
-
-type CallEnded = {
-  callId: string;
-  fromUserId: string;
-  toUserId: string;
-  reason?: string | null;
 };
 
 const ICE_CONFIG = {
@@ -173,6 +145,11 @@ export function useWebRTCCall(userId: string | null) {
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
+
+  const peerUserIdRef = useRef<string | null>(null);
 
   const callIdRef = useRef<string | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -182,6 +159,10 @@ export function useWebRTCCall(userId: string | null) {
   const acceptRequestedRef = useRef(false);
   const outgoingReadyRef = useRef(false);
 
+  useEffect(() => {
+    peerUserIdRef.current = peerUserId;
+  }, [peerUserId]);
+
   const cleanup = useCallback(() => {
     pendingRemoteOfferRef.current = null;
     pendingCandidatesRef.current = [];
@@ -189,6 +170,9 @@ export function useWebRTCCall(userId: string | null) {
     isVideoRef.current = true;
     acceptRequestedRef.current = false;
     outgoingReadyRef.current = false;
+    setIsAudioMuted(false);
+    setIsVideoOff(false);
+    setIsFrontCamera(true);
 
     try {
       pcRef.current?.close();
@@ -326,13 +310,24 @@ export function useWebRTCCall(userId: string | null) {
         isVideo,
       };
       socket.emit('call_user', invite, (ack: any) => {
-        console.log('[webrtc] ack call_user', ack);
+        console.log('[webrtc] ack call_user', {
+          callId,
+          ack,
+        });
+
+        if (ack && typeof ack === 'object' && ack.ok === false) {
+          console.log('[webrtc] call_user failed', {
+            callId,
+            error: (ack as any).error,
+          });
+          cleanup();
+        }
       });
       console.log('[webrtc] emit call_user', invite);
 
       setMode('connecting');
     },
-    [createPeerConnection, getLocalStream, userId],
+    [cleanup, createPeerConnection, getLocalStream, userId],
   );
 
   const acceptIncoming = useCallback(async () => {
@@ -479,6 +474,54 @@ export function useWebRTCCall(userId: string | null) {
     [cleanup, peerUserId, userId],
   );
 
+  const toggleAudio = useCallback(() => {
+    if (!localStream) {
+      return;
+    }
+
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setIsAudioMuted(!audioTrack.enabled);
+    }
+  }, [localStream]);
+
+  const toggleVideo = useCallback(() => {
+    if (!localStream) {
+      return;
+    }
+
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setIsVideoOff(!videoTrack.enabled);
+    }
+  }, [localStream]);
+
+  const flipCamera = useCallback(async () => {
+    if (!localStream || mode !== 'in_call') {
+      console.log('[webrtc] flipCamera ignored - no stream or not in call');
+      return;
+    }
+
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack || !videoTrack.enabled) {
+      console.log('[webrtc] flipCamera ignored - video track disabled');
+      return;
+    }
+
+    try {
+      const trackAny = videoTrack as any;
+      if (typeof trackAny._switchCamera === 'function') {
+        await trackAny._switchCamera();
+        setIsFrontCamera(!isFrontCamera);
+        console.log('[webrtc] camera flipped successfully');
+      }
+    } catch (e) {
+      console.log('[webrtc] failed to flip camera', e);
+    }
+  }, [isFrontCamera, localStream, mode]);
+
   useEffect(() => {
     const onIncomingCall = (data: unknown) => {
       if (!userId || !isRecord(data)) {
@@ -538,7 +581,7 @@ export function useWebRTCCall(userId: string | null) {
       }
 
       const pc = pcRef.current;
-      const peer = peerUserId;
+      const peer = peerUserIdRef.current;
       if (!pc || !peer || !userId) {
         return;
       }
@@ -679,7 +722,9 @@ export function useWebRTCCall(userId: string | null) {
         });
         setMode('incoming');
       } else if (mode === 'connecting') {
-        void maybeFinalizeAccept();
+        maybeFinalizeAccept().catch(e => {
+          console.log('[webrtc] failed to finalize accept after offer', e);
+        });
       }
     };
 
@@ -809,9 +854,15 @@ export function useWebRTCCall(userId: string | null) {
     incomingCall,
     localStream,
     remoteStream,
+    isAudioMuted,
+    isVideoOff,
+    isFrontCamera,
     startCall,
     acceptIncoming,
     rejectIncoming,
     endCall,
+    toggleAudio,
+    toggleVideo,
+    flipCamera,
   };
 }

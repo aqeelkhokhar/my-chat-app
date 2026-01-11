@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { socket } from '../services/socket';
 import type { ChatMessage } from '../types/chat';
 
@@ -47,6 +48,7 @@ export function useChat(
       if (userId) {
         socket.emit('register', { userId });
         socket.emit('get_online_users');
+        socket.emit('get_missed_calls');
       }
     };
 
@@ -172,14 +174,50 @@ export function useChat(
       showNotification('New Message', text);
     };
 
+    const onMissedCalls = (data: unknown) => {
+      if (!Array.isArray(data)) {
+        return;
+      }
+
+      for (const item of data) {
+        if (!item || typeof item !== 'object') {
+          continue;
+        }
+        const d = item as Record<string, unknown>;
+        const fromUserId = typeof d.fromUserId === 'string' ? d.fromUserId : '';
+        if (!fromUserId.trim()) {
+          continue;
+        }
+        showNotification('Missed call', `Missed call from ${fromUserId}`);
+      }
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('online_users', onOnlineUsers);
     socket.on('receive_message', onReceiveMessage);
+    socket.on('missed_calls', onMissedCalls);
+
+    const appStateSub = AppState.addEventListener('change', nextState => {
+      if (nextState !== 'active') {
+        return;
+      }
+
+      if (!socket.connected) {
+        socket.connect();
+      }
+
+      if (userId) {
+        socket.emit('register', { userId });
+        socket.emit('get_online_users');
+        socket.emit('get_missed_calls');
+      }
+    });
 
     if (socket.connected && userId) {
       socket.emit('register', { userId });
       socket.emit('get_online_users');
+      socket.emit('get_missed_calls');
     }
 
     return () => {
@@ -187,6 +225,9 @@ export function useChat(
       socket.off('disconnect', onDisconnect);
       socket.off('online_users', onOnlineUsers);
       socket.off('receive_message', onReceiveMessage);
+      socket.off('missed_calls', onMissedCalls);
+
+      appStateSub.remove();
     };
   }, [showNotification, userId]);
 
