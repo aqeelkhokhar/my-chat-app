@@ -716,4 +716,136 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+
+  // Photo Message Styles
+  messageImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+  },
+  messageImageLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+  },
+
+  // Attachment Button
+  attachButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  attachButtonPressed: {
+    opacity: 0.7,
+  },
+
+  // Image Picker Modal
+  imagePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  imagePickerContent: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
+  imagePickerHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  imagePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+  },
+  imagePickerOptionPressed: {
+    backgroundColor: colors.surfaceHover,
+  },
+  imagePickerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  imagePickerText: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  imagePickerCancel: {
+    marginTop: 8,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  imagePickerCancelText: {
+    color: colors.textMuted,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Profile Avatar (clickable)
+  profileAvatarContainer: {
+    position: 'relative',
+  },
+  profileAvatarEdit: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.header,
+  },
+  profileImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+  },
+
+  // Upload Progress
+  uploadProgress: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadProgressText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+  },
 });

@@ -70,6 +70,7 @@ export function useChat(
       let receivedToUserId: string | undefined;
       let clientMessageId: string | undefined;
       let createdAt: number | undefined;
+      let imageUrl: string | undefined;
 
       if (typeof data === 'string') {
         text = data;
@@ -104,6 +105,11 @@ export function useChat(
         } else if (typeof d.id === 'string') {
           clientMessageId = d.id;
         }
+
+        // Handle image URL
+        if (typeof d.imageUrl === 'string') {
+          imageUrl = d.imageUrl;
+        }
       }
 
       if (!text.trim()) {
@@ -134,10 +140,11 @@ export function useChat(
         typeof createdAt === 'number' ? createdAt : Date.now();
 
       if (normalizedFrom) {
+        const previewText = imageUrl ? '📷 Photo' : text;
         setMetaByUserId(prev => ({
           ...prev,
           [normalizedFrom]: {
-            lastText: text,
+            lastText: previewText,
             lastAt: messageCreatedAt,
           },
         }));
@@ -151,27 +158,32 @@ export function useChat(
         }
       }
 
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          text,
-          from: 'other',
-          fromUserId: normalizedFrom || fromUserId,
-          toUserId: normalizedTo || receivedToUserId,
-          clientMessageId,
-          createdAt: messageCreatedAt,
-        },
-      ]);
+      const newMessage: ChatMessage = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        text,
+        from: 'other',
+        fromUserId: normalizedFrom || fromUserId,
+        toUserId: normalizedTo || receivedToUserId,
+        clientMessageId,
+        createdAt: messageCreatedAt,
+      };
+
+      if (imageUrl) {
+        newMessage.imageUrl = imageUrl;
+      }
+
+      setMessages(prev => [...prev, newMessage]);
 
       console.log('New message received from other user:', {
-        text,
+        text: imageUrl ? '[Image]' : text,
         fromUserId,
         toUserId: receivedToUserId,
         myUserId: userId,
+        hasImage: !!imageUrl,
       });
 
-      showNotification('New Message', text);
+      const notificationText = imageUrl ? '📷 Photo' : text;
+      showNotification('New Message', notificationText);
     };
 
     const onMissedCalls = (data: unknown) => {
@@ -260,8 +272,8 @@ export function useChat(
     socket.emit('get_online_users');
   }, [userId]);
 
-  const sendMessage = () => {
-    const text = input.trim();
+  const sendMessage = (messageText?: string, isImage?: boolean) => {
+    const text = messageText ?? input.trim();
     if (!text) {
       return;
     }
@@ -281,42 +293,55 @@ export function useChat(
 
     seenMessageIdsRef.current.add(clientMessageId);
 
-    socket.emit('send_message', {
+    const messagePayload: Record<string, unknown> = {
       text,
       fromUserId: userId,
       toUserId: trimmedToUserId,
       clientMessageId,
       createdAt: Date.now(),
-    });
+    };
 
+    if (isImage) {
+      messagePayload.imageUrl = text;
+    }
+
+    socket.emit('send_message', messagePayload);
+
+    const previewText = isImage ? '📷 Photo' : text;
     setMetaByUserId(prev => ({
       ...prev,
       [trimmedToUserId]: {
-        lastText: text,
+        lastText: previewText,
         lastAt: Date.now(),
       },
     }));
 
-    setMessages(prev => [
-      ...prev,
-      {
-        id: clientMessageId,
-        text,
-        from: 'me',
-        fromUserId: userId,
-        toUserId: trimmedToUserId,
-        clientMessageId,
-        createdAt: Date.now(),
-      },
-    ]);
+    const newMessage: ChatMessage = {
+      id: clientMessageId,
+      text,
+      from: 'me',
+      fromUserId: userId,
+      toUserId: trimmedToUserId,
+      clientMessageId,
+      createdAt: Date.now(),
+    };
 
-    setInput('');
+    if (isImage) {
+      newMessage.imageUrl = text;
+    }
+
+    setMessages(prev => [...prev, newMessage]);
+
+    if (!messageText) {
+      setInput('');
+    }
 
     console.log('Message sent:', {
-      text,
+      text: isImage ? '[Image]' : text,
       clientMessageId,
       fromUserId: userId,
       toUserId: trimmedToUserId,
+      isImage,
     });
   };
 

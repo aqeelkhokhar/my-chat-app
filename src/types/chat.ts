@@ -8,6 +8,16 @@ export type ChatMessage = {
   clientMessageId?: string;
   createdAt: number;
   isGroupMessage?: boolean;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+};
+
+export type UserProfile = {
+  id: string;
+  displayName?: string;
+  avatarUrl?: string;
+  updatedAt?: number;
 };
 
 export type Group = {
